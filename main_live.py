@@ -41,7 +41,7 @@ logger.add(
     format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}",
     rotation="1 day",
     retention="30 days",
-    level="DEBUG",
+    level="INFO",
     encoding="utf-8",  # v0.2.2: Fix Unicode encoding errors (Professor AI Fix #5)
 )
 
@@ -1669,6 +1669,19 @@ class TradingBot:
         if signal_blocked:
             return
 
+        # 10.05 Direction Filter — runtime toggle via filter_config.json
+        dir_enabled = self._is_filter_enabled("direction_filter")
+        dir_passed = True
+        dir_detail = "All directions allowed"
+        if dir_enabled and final_signal is not None:
+            allowed = self.filter_config.filters.get("direction_filter", {}).get("allowed_directions", ["BUY", "SELL"])
+            if final_signal.signal_type not in allowed:
+                dir_passed = False
+                dir_detail = f"{final_signal.signal_type} blocked (allowed: {allowed})"
+        self._last_filter_results.append({"name": "Direction Filter", "passed": dir_passed, "detail": dir_detail})
+        if not dir_passed and dir_enabled:
+            return
+
         # 10.1 H1 Bias — PENDUKUNG SAJA (v0.2.5d: tidak memblokir, hanya penalti confidence)
         # SMC is MASTER. H1 aligned = boost 5%, H1 opposed = penalti 10%
         h1_enabled = self._is_filter_enabled("h1_bias")
@@ -2454,6 +2467,10 @@ class TradingBot:
                             if row["ticket"] == action.ticket:
                                 profit = row.get("profit", 0)
                                 break
+                        broker_profit = self.mt5.get_deal_profit(action.ticket)
+                        if broker_profit is not None:
+                            logger.info(f"Broker P&L #{action.ticket}: ${broker_profit:.2f} (was ${profit:.2f})")
+                            profit = broker_profit
                         risk_result = self.smart_risk.record_trade_result(profit)
                         self.smart_risk.unregister_position(action.ticket)
                         self.position_manager._peak_profits.pop(action.ticket, None)
@@ -2561,6 +2578,12 @@ class TradingBot:
                 result = self.mt5.close_position(ticket)
                 if result.success:
                     logger.info(f"CLOSED #{ticket}: {message}")
+
+                    # Sync P&L with broker before recording
+                    broker_profit = self.mt5.get_deal_profit(ticket)
+                    if broker_profit is not None:
+                        logger.info(f"Broker P&L #{ticket}: ${broker_profit:.2f} (was ${profit:.2f})")
+                        profit = broker_profit
 
                     # Record result and check for limit violations
                     risk_result = self.smart_risk.record_trade_result(profit)

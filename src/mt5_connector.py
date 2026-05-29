@@ -6,6 +6,7 @@ Handles all communication with MT5 terminal.
 CRITICAL: Data is converted to Polars DataFrame immediately after fetching.
 """
 
+import os
 import polars as pl
 import numpy as np
 from typing import Optional, Dict, Any, List, Tuple
@@ -15,10 +16,18 @@ import time
 from loguru import logger
 
 try:
-    import MetaTrader5 as mt5
+    from mt5linux import MetaTrader5 as _MT5Class
+    _host = os.getenv("MT5_SERVER_HOST", "localhost")
+    _port = int(os.getenv("MT5_SERVER_PORT", "18812"))
+    mt5 = _MT5Class(host=_host, port=_port)
+    logger.info(f"Using mt5linux bridge @ {_host}:{_port}")
 except ImportError:
-    logger.warning("MetaTrader5 not installed. Running in simulation mode.")
-    mt5 = None
+    try:
+        import MetaTrader5 as mt5
+        logger.info("Using native MetaTrader5 package")
+    except ImportError:
+        logger.warning("MetaTrader5 not installed. Running in simulation mode.")
+        mt5 = None
 
 
 @dataclass
@@ -130,6 +139,18 @@ class MT5Connector:
         if mt5 is None:
             logger.warning("MT5 not available - simulation mode")
             return False
+
+        # Fast path: terminal already running and logged in (mt5linux bridge)
+        try:
+            info = mt5.account_info()
+            if info is not None:
+                self._connected = True
+                self._account_info = self._get_account_info()
+                mt5.symbol_select("XAUUSD", True)
+                logger.info(f"Attached to running MT5 terminal (Account: {info.login}, Server: {info.server})")
+                return True
+        except Exception:
+            pass
 
         for attempt in range(max_retries):
             try:
@@ -737,6 +758,27 @@ class MT5Connector:
             comment=result.comment if result else "Max retries exceeded",
         )
     
+    def get_deal_profit(self, position_ticket: int) -> Optional[float]:
+        """
+        Fetch broker-confirmed P&L for a closed position via deal history.
+
+        Uses position= kwarg (mt5linux compatible). entry=1 is the closing deal.
+        Returns profit + commission + swap + fee, or None if not found.
+        """
+        if not mt5:
+            return None
+        try:
+            deals = mt5.history_deals_get(position=position_ticket)
+            if not deals:
+                return None
+            for deal in deals:
+                if deal.entry == 1:
+                    return float(deal.profit + deal.commission + deal.swap + deal.fee)
+            return None
+        except Exception as e:
+            logger.warning(f"get_deal_profit #{position_ticket}: {e}")
+            return None
+
     def get_open_positions(
         self,
         symbol: Optional[str] = None,
