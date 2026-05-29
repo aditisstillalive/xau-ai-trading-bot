@@ -1668,6 +1668,17 @@ class SmartRiskManager:
                     f"(age {trade_age_minutes:.1f}m)"
                 )
 
+        # === CHECK 0A.6: INSTANT PEAK LOCK (no age gate) ===
+        # Golden Session trades peak and reverse in 1-3 min — 8-min age gates miss everything.
+        # Once peak >= tp_min (ATR-scaled), lock floor at 60% of peak immediately.
+        if guard.peak_profit >= tp_min and current_profit > 0 and current_profit < guard.peak_profit * 0.60:
+            instant_floor = guard.peak_profit * 0.60
+            return True, ExitReason.TAKE_PROFIT, (
+                f"[INSTANT-LOCK] Securing ${current_profit:.2f} — "
+                f"peak ${guard.peak_profit:.2f} dropped to {current_profit/guard.peak_profit:.0%}, "
+                f"floor=${instant_floor:.2f} (tp_min=${tp_min:.2f}, no age gate)"
+            )
+
         # === CHECK 0A.3: VELOCITY CRASH OVERRIDE (v0.2.1 FIX 3) ===
         # Emergency exit when velocity FLIPS from strong positive to negative
         # This catches extreme momentum crashes that fuzzy logic might delay
