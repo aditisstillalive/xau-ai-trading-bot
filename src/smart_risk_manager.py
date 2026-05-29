@@ -1028,7 +1028,7 @@ class SmartRiskManager:
         Returns threshold value 0.0-1.0
         """
         if current_profit < 1.0:
-            return 0.70  # Micro: exit early
+            return 0.88  # Micro: high bar — avoid exiting at pennies (was 70%, too low)
         elif current_profit < 3.0:
             return 0.75  # Small: protect
         elif current_profit < 8.0:
@@ -1409,8 +1409,9 @@ class SmartRiskManager:
                     adjustments = []
 
                     # v0.2.1 FIX 1: LOWER threshold when crash predicted (exit faster!)
+                    # Fix v0.2.9: Only apply crash penalty when profit >= tp_min — no effect on micro profits
                     if (_PREDICTIVE_ENABLED and self.trajectory_predictor is not None and
-                        len(guard.velocity_history) >= 3):
+                        len(guard.velocity_history) >= 3 and current_profit >= tp_min):
                         # Get trajectory prediction (already calculated above)
                         pred_1m = predictions.get('pred_1m', 0) if 'predictions' in locals() else None
                         if pred_1m is not None and pred_1m < 0:
@@ -1477,12 +1478,19 @@ class SmartRiskManager:
                     adj_str = f" [{'+'.join(adjustments)}]" if adjustments else ""
 
                     # High confidence exit (unless trajectory override or peak hold)
+                    # Fix v0.2.9: Require profit >= tp_early_min — no fuzzy exit on sub-minimum profits
                     peak_suppression = getattr(guard, 'peak_hold_active', False)
                     if exit_confidence > fuzzy_threshold and not trajectory_override and not peak_suppression:
-                        return True, ExitReason.TAKE_PROFIT, (
-                            f"[FUZZY HIGH] Exit confidence: {exit_confidence:.2%} "
-                            f"(profit=${current_profit:.2f}, tier={tier}, threshold={fuzzy_threshold:.0%}{adj_str})"
-                        )
+                        if current_profit < tp_early_min:
+                            logger.info(
+                                f"[FUZZY SKIP] profit=${current_profit:.2f} < tp_early_min=${tp_early_min:.2f} "
+                                f"— micro profit, not exiting (fuzzy={exit_confidence:.2%})"
+                            )
+                        else:
+                            return True, ExitReason.TAKE_PROFIT, (
+                                f"[FUZZY HIGH] Exit confidence: {exit_confidence:.2%} "
+                                f"(profit=${current_profit:.2f}, tier={tier}, threshold={fuzzy_threshold:.0%}{adj_str})"
+                            )
                     elif trajectory_override:
                         # Log but don't exit - trajectory prediction says hold
                         logger.info(
