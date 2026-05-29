@@ -73,7 +73,7 @@ class DatabaseConnection:
         self.port = port or int(os.getenv("DB_PORT", "5432"))
         self.database = database or os.getenv("DB_NAME", "trading_db")
         self.user = user or os.getenv("DB_USER", "trading_bot")
-        self.password = password or os.getenv("DB_PASSWORD", "trading_bot_2026")
+        self.password = password or os.getenv("DB_PASSWORD", "")
 
         self.min_connections = min_connections
         self.max_connections = max_connections

@@ -23,7 +23,7 @@ def get_db_config() -> dict:
         "port": int(os.getenv("DB_PORT", "5432")),
         "dbname": os.getenv("DB_NAME", "trading_db"),
         "user": os.getenv("DB_USER", "trading_bot"),
-        "password": os.getenv("DB_PASSWORD", "trading_bot_2026"),
+        "password": os.getenv("DB_PASSWORD", ""),
     }
 
 

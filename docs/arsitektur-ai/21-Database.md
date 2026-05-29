@@ -71,7 +71,7 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=trading_db
 DB_USER=trading_bot
-DB_PASSWORD=trading_bot_2026
+DB_PASSWORD=your_db_password_here
 ```
 
 ### Penggunaan
