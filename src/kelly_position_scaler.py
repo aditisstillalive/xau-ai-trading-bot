@@ -165,8 +165,8 @@ class KellyPositionScaler:
         self.avg_win = sum(wins) / len(wins) if wins else 8.0
         self.avg_loss = abs(sum(losses) / len(losses)) if losses else 4.0
 
-        # Floor win_rate at 0.40 — prevents Kelly going fully negative from short bad streak
-        self.base_win_rate = max(self.base_win_rate, 0.40)
+        # Floor win_rate at 0.50 — prevents Kelly from over-exiting profit trades on bad streak
+        self.base_win_rate = max(self.base_win_rate, 0.50)
 
     def get_statistics(self) -> dict:
         """Get current statistics."""

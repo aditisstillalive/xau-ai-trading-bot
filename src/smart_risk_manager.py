@@ -1592,9 +1592,9 @@ class SmartRiskManager:
         # === v0.2.6f: GOLDEN EMERGENCY EXIT with TRAJECTORY OVERRIDE ===
         # Never-profitable trades in Golden Session with steep loss → cut fast
         # BUT: if trajectory predicts strong recovery, give it time
-        # Golden = extreme volatility, if -$5+ in 60s and never profitable, check trajectory
+        # Golden = extreme volatility, if -$3+ in 60s and never profitable, check trajectory
         if (is_golden and not guard.ever_profitable
-                and current_profit < -5.0 and trade_age_seconds >= 60):
+                and current_profit < -3.0 and trade_age_seconds >= 60):
 
             # v0.2.7f: Check if trajectory predicts RECOVERY (not just profit)
             # Key insight: recovery = pred_1m - current_profit
