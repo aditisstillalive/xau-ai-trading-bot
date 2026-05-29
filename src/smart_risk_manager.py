@@ -381,10 +381,12 @@ class SmartRiskManager:
         recovery_lot_size: float = 0.01,          # Lot saat recovery
         trend_reversal_threshold: float = 0.75,   # ML confidence untuk close
         max_concurrent_positions: int = 2,        # Max posisi bersamaan
+        daily_profit_target: float = 0.0,         # Daily profit target USD (0 = disabled)
     ):
         self.capital = capital
         self.max_daily_loss_percent = max_daily_loss_percent
         self.max_daily_loss_usd = capital * (max_daily_loss_percent / 100)
+        self.daily_profit_target = daily_profit_target
         self.max_total_loss_percent = max_total_loss_percent
         self.max_total_loss_usd = capital * (max_total_loss_percent / 100)
         self.max_loss_per_trade_percent = max_loss_per_trade_percent
@@ -431,6 +433,8 @@ class SmartRiskManager:
         logger.info(f"  Software S/L: {max_loss_per_trade_percent}% (${self.max_loss_per_trade:.2f})")
         logger.info(f"  Emergency Broker S/L: {emergency_sl_percent}% (${self.emergency_sl_usd:.2f})")
         logger.info(f"  Max Positions: {max_concurrent_positions}")
+        if daily_profit_target > 0:
+            logger.info(f"  Daily Profit Target: ${daily_profit_target:.2f} (stop trading when reached)")
         logger.info(f"  Base Lot: {base_lot_size}")
         logger.info(f"  Max Lot: {max_lot_size}")
         logger.info("  Mode: SMART S/L (software + broker safety net)")
@@ -703,11 +707,19 @@ class SmartRiskManager:
             self._state.reason = f"TOTAL LOSS LIMIT reached ({self.max_total_loss_percent}% = ${self._total_loss:.2f}) - TRADING STOPPED"
             return
 
-        # Check daily loss limit (5%)
-        if self._state.daily_loss >= self.max_daily_loss_usd:
+        # Check daily loss limit — based on NET P&L (profit offsets losses)
+        daily_net = self._state.daily_profit - self._state.daily_loss
+        if daily_net <= -self.max_daily_loss_usd:
             self._state.mode = TradingMode.STOPPED
             self._state.can_trade = False
-            self._state.reason = f"Daily loss limit reached ({self.max_daily_loss_percent}% = ${self._state.daily_loss:.2f})"
+            self._state.reason = f"Daily loss limit reached: net ${daily_net:.2f} (limit -${self.max_daily_loss_usd:.2f})"
+            return
+
+        # Check daily profit target (stop trading when target reached)
+        if self.daily_profit_target > 0 and daily_net >= self.daily_profit_target:
+            self._state.mode = TradingMode.STOPPED
+            self._state.can_trade = False
+            self._state.reason = f"Daily profit target reached: ${daily_net:.2f} (target ${self.daily_profit_target:.2f})"
             return
 
         # Check if approaching TOTAL limit (80%)
@@ -1486,7 +1498,7 @@ class SmartRiskManager:
 
                     # v0.2.2 Professor AI Enhancement: Partial Exit Strategy
                     # Exit 50% at tp_target * 0.5, hold 50% for peak capture
-                    if self.kelly_scaler is not None and current_profit >= tp_min * 0.5:
+                    if self.kelly_scaler is not None and current_profit >= tp_min:
                         should_exit, close_fraction, kelly_msg = self.kelly_scaler.get_exit_action(
                             exit_confidence, current_profit, tp_hard
                         )
@@ -1530,9 +1542,8 @@ class SmartRiskManager:
                                 f"(loss=${current_profit:.2f}, cut early)"
                             )
 
-                    # Kelly active for losses (help cut faster)
-                    # Also respect grace period for small losses
-                    if self.kelly_scaler is not None and exit_confidence > 0.60:
+                    # Kelly active for losses — threshold 75% matches fuzzy standalone
+                    if self.kelly_scaler is not None and exit_confidence > 0.75:
                         should_exit, close_fraction, kelly_msg = self.kelly_scaler.get_exit_action(
                             exit_confidence, current_profit, tp_hard
                         )
@@ -2209,6 +2220,8 @@ class SmartRiskManager:
 
 def create_smart_risk_manager(capital: float = 5000.0) -> SmartRiskManager:
     """Create smart risk manager instance with NEW settings."""
+    import os
+    daily_profit_target = float(os.getenv("DAILY_PROFIT_TARGET", "0.0"))
     return SmartRiskManager(
         capital=capital,
         max_daily_loss_percent=5.0,         # Max 5% daily loss
@@ -2220,6 +2233,7 @@ def create_smart_risk_manager(capital: float = 5000.0) -> SmartRiskManager:
         recovery_lot_size=0.01,             # Saat recovery tetap 0.01
         trend_reversal_threshold=0.65,      # Close jika ML 65%+ yakin (lebih sensitif)
         max_concurrent_positions=2,         # Max 2 posisi bersamaan
+        daily_profit_target=daily_profit_target,  # From env: DAILY_PROFIT_TARGET
     )
 
 

@@ -57,7 +57,9 @@ class KellyPositionScaler:
         self.avg_loss = avg_loss
         self.kelly_fraction = kelly_fraction
 
-        # Running statistics (updated from trade history)
+        # Rolling window statistics (last 20 trades — prevents all-time feedback loop)
+        self.window_size = 20
+        self._trade_window: list = []
         self.total_trades = 0
         self.total_wins = 0
         self.total_losses = 0
@@ -145,29 +147,26 @@ class KellyPositionScaler:
 
     def update_statistics(self, profit: float):
         """
-        Update running statistics from completed trade.
-
-        Args:
-            profit: Trade profit/loss ($)
+        Update rolling window statistics from completed trade.
+        Uses last 20 trades only — prevents stale bad-streak feedback loop.
         """
-        self.total_trades += 1
+        self._trade_window.append(profit)
+        if len(self._trade_window) > self.window_size:
+            self._trade_window.pop(0)
 
-        if profit > 0:
-            self.total_wins += 1
-            self.sum_wins += profit
-        else:
-            self.total_losses += 1
-            self.sum_losses += abs(profit)
+        wins = [p for p in self._trade_window if p > 0]
+        losses = [p for p in self._trade_window if p <= 0]
 
-        # Recalculate base parameters
-        if self.total_trades > 0:
-            self.base_win_rate = self.total_wins / self.total_trades
+        self.total_trades = len(self._trade_window)
+        self.total_wins = len(wins)
+        self.total_losses = len(losses)
 
-        if self.total_wins > 0:
-            self.avg_win = self.sum_wins / self.total_wins
+        self.base_win_rate = self.total_wins / self.total_trades if self.total_trades > 0 else 0.55
+        self.avg_win = sum(wins) / len(wins) if wins else 8.0
+        self.avg_loss = abs(sum(losses) / len(losses)) if losses else 4.0
 
-        if self.total_losses > 0:
-            self.avg_loss = self.sum_losses / self.total_losses
+        # Floor win_rate at 0.40 — prevents Kelly going fully negative from short bad streak
+        self.base_win_rate = max(self.base_win_rate, 0.40)
 
     def get_statistics(self) -> dict:
         """Get current statistics."""
