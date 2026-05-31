@@ -235,6 +235,7 @@ class MT5Connector:
         logger.warning("Attempting to reconnect to MT5...")
 
         # Full shutdown and cleanup
+        global mt5
         if mt5:
             try:
                 mt5.shutdown()
@@ -248,6 +249,16 @@ class MT5Connector:
         wait_time = min(5, 2 + self._reconnect_attempts)
         logger.info(f"Waiting {wait_time}s before reconnect (attempt {self._reconnect_attempts})...")
         time.sleep(wait_time)
+
+        # CRITICAL: Create fresh mt5linux instance — old socket is permanently broken
+        # after "stream has been closed". shutdown()+initialize() on same object always
+        # fails. New instance opens a fresh TCP connection to the bridge.
+        try:
+            mt5 = _MT5Class(host=_host, port=_port)
+            logger.info(f"Fresh mt5linux instance created @ {_host}:{_port}")
+        except Exception as e:
+            logger.error(f"Failed to create fresh MT5 instance: {e}")
+            return False
 
         try:
             success = self.connect(max_retries=3)
